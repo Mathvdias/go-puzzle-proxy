@@ -53,7 +53,7 @@ func (s *GeminiPuzzleService) GeneratePuzzle(req PuzzleRequest) ([]byte, error) 
 	}
 
 	prompt := ""
-	var responseSchema json.RawMessage // <--- ALTERADO: json.RawRawMessage para json.RawMessage
+	var schemaBytes []byte // Usaremos um slice de bytes temporário para o schema JSON
 
 	// Lógica para construir o prompt e o schema de resposta com base no tipo de jogo.
 	if req.GameType == "crossword" {
@@ -69,7 +69,7 @@ func (s *GeminiPuzzleService) GeneratePuzzle(req PuzzleRequest) ([]byte, error) 
 		`, difficultyString, gameTypeString, req.Language, topicsString)
 
 		// Schema JSON específico para palavras cruzadas.
-		responseSchema = json.RawMessage(`{ // <--- ALTERADO: json.RawRawMessage para json.RawMessage
+		schemaBytes = []byte(`{
 			"type": "OBJECT",
 			"properties": {
 				"gameType": {
@@ -132,7 +132,7 @@ func (s *GeminiPuzzleService) GeneratePuzzle(req PuzzleRequest) ([]byte, error) 
 		`, difficultyString, gameTypeString, req.Language, topicsString)
 
 		// Schema JSON específico para caça-palavras.
-		responseSchema = json.RawMessage(`{ // <--- ALTERADO: json.RawRawMessage para json.RawMessage
+		schemaBytes = []byte(`{
 			"type": "OBJECT",
 			"properties": {
 				"gameType": {
@@ -170,6 +170,17 @@ func (s *GeminiPuzzleService) GeneratePuzzle(req PuzzleRequest) ([]byte, error) 
 		}`)
 	}
 
+	// NOVO: Parse o schema JSON em um map e então marshal de volta para RawMessage.
+	// Isso garante que o json.RawMessage contenha JSON válido.
+	var parsedSchema map[string]interface{}
+	if err := json.Unmarshal(schemaBytes, &parsedSchema); err != nil {
+		return nil, fmt.Errorf("falha ao parsear o schema JSON para map: %w", err)
+	}
+	responseSchema, err := json.Marshal(parsedSchema)
+	if err != nil {
+		return nil, fmt.Errorf("falha ao serializar o map do schema para json.RawMessage: %w", err)
+	}
+
 	// Constrói o payload da requisição para a API Gemini.
 	geminiReq := GeminiRequest{
 		Contents: []GeminiContent{
@@ -181,7 +192,7 @@ func (s *GeminiPuzzleService) GeneratePuzzle(req PuzzleRequest) ([]byte, error) 
 		},
 		GenerationConfig: GeminiGenerationConfig{
 			ResponseMimeType: "application/json",
-			ResponseSchema:   responseSchema,
+			ResponseSchema:   responseSchema, // Usa o json.RawMessage validado
 			Temperature:      0.7, // Ajuste conforme necessário para criatividade vs. consistência.
 			TopP:             0.9,
 			TopK:             40,
